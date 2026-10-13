@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Genius Tagger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #d6dad3;
+    --ink: #1c211e;
+    --accent: #2f4a3c;
+    --soft: color-mix(in srgb, var(--ink) 55%, transparent);
+    --line: color-mix(in srgb, var(--ink) 22%, transparent);
+    --well: color-mix(in srgb, var(--ink) 7%, transparent);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-themed]) { --bg: #1d2320; --ink: #e4e8e2; --accent: #a9c9b4; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Bricolage Grotesque", -apple-system, system-ui, sans-serif;
+    font-optical-sizing: auto;
+    font-size: 15px;
+    line-height: 1.45;
+    transition: background-color .9s ease, color .9s ease;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+  main {
+    min-height: 100%;
+    display: grid;
+    grid-template-columns: minmax(0, auto) minmax(320px, 1fr);
+    gap: clamp(28px, 5vw, 72px);
+    align-items: center;
+    padding: clamp(20px, 5vw, 64px);
+    max-width: 1320px;
+    margin: 0 auto;
+  }
+
+  /* The sleeve: the cover, or an empty record waiting for a song */
+  .sleeve {
+    width: min(44vw, 78vh, 620px);
+    aspect-ratio: 1;
+    position: relative;
+    border-radius: 6px;
+    overflow: hidden;
+    background:
+      repeating-radial-gradient(circle at 50% 50%, transparent 0 3px, var(--well) 3px 4px),
+      radial-gradient(circle at 50% 50%, var(--line) 0 9%, transparent 9.2%),
+      var(--well);
+    box-shadow: 0 30px 60px -30px color-mix(in srgb, var(--ink) 45%, transparent);
+    transition: box-shadow .9s ease;
+  }
+  .sleeve img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; opacity: 0; transform: scale(1.03);
+    transition: opacity .7s ease, transform .9s cubic-bezier(.2,.7,.2,1);
+  }
+  .sleeve img.on { opacity: 1; transform: none; }
+  .sleeve .hint {
+    position: absolute; left: 0; right: 0; bottom: 22px;
+    text-align: center; color: var(--soft); font-size: 14px;
+  }
+  .sleeve.has-cover .hint { display: none; }
+  body.dragging .sleeve { outline: 3px dashed var(--accent); outline-offset: 6px; }
+
+  .panel { min-width: 0; max-width: 560px; }
+
+  h1 {
+    font-size: clamp(40px, 6.4vw, 84px);
+    font-weight: 750;
+    line-height: .95;
+    letter-spacing: -.035em;
+    margin: 0 0 6px;
+    overflow-wrap: anywhere;
+  }
+  h1.empty { font-weight: 300; color: var(--soft); }
+  .byline { font-size: 22px; font-weight: 450; margin: 0 0 30px; min-height: 1.4em; }
+
+  .source {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 10px; margin-bottom: 12px;
+  }
+  .file { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+  .yt { display: flex; border-top: 1px solid var(--line); }
+  .yt input {
+    flex: 1; min-width: 0; border: 0; background: transparent; padding: 11px 14px; font-size: 14px;
+  }
+  .yt input::placeholder { color: var(--soft); }
+  .yt input:focus { outline: none; background: var(--well); }
+  .bar {
+    position: absolute; left: 0; bottom: 0; height: 3px; width: 0;
+    background: var(--ink); transition: width .3s ease, opacity .4s ease;
+  }
+  .bar.busy { width: 30%; animation: slide 1.1s ease-in-out infinite alternate; }
+  @keyframes slide { from { margin-left: 0; } to { margin-left: 70%; } }
+  .file .what { flex: 1; min-width: 0; }
+  .file .name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .file .sub { color: var(--soft); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .link {
+    display: flex; gap: 8px; margin-bottom: 26px;
+  }
+  .link input {
+    flex: 1; min-width: 0; padding: 12px 14px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--well);
+  }
+  .link input::placeholder { color: var(--soft); }
+  .link { margin-bottom: 0; }
+  .results { list-style: none; margin: 8px 0 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .results li + li { border-top: 1px solid var(--line); }
+  .results button {
+    width: 100%; display: flex; align-items: center; gap: 12px; text-align: left;
+    border: 0; background: transparent; padding: 8px 12px; cursor: pointer;
+  }
+  .results button:hover, .results button:focus-visible { background: var(--well); outline: none; }
+  .results img, .results .noart { width: 40px; height: 40px; border-radius: 3px; flex: none; object-fit: cover; background: var(--well); }
+  .results .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .results .a { color: var(--soft); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .results .txt { min-width: 0; }
+  .results .empty { padding: 12px; color: var(--soft); }
+  .after-link { height: 26px; }
+
+  .btn {
+    border: 1px solid var(--line); background: transparent;
+    padding: 10px 16px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+    font-weight: 550;
+  }
+  .btn:hover { background: var(--well); }
+  .btn.primary {
+    background: var(--ink); color: var(--bg); border-color: var(--ink);
+    padding: 14px 26px; font-size: 16px;
+  }
+  .btn.primary:hover { background: color-mix(in srgb, var(--ink) 85%, var(--bg)); }
+  .btn:disabled { opacity: .4; cursor: default; }
+  .btn.primary:disabled:hover { background: var(--ink); }
+
+  dl {
+    display: grid; grid-template-columns: 110px 1fr; margin: 0 0 22px;
+    border-top: 1px solid var(--line);
+  }
+  dl[hidden] { display: none; }
+  dt, dd { margin: 0; border-bottom: 1px solid var(--line); }
+  dt { color: var(--soft); padding: 9px 0; font-size: 14px; }
+  dd input {
+    width: 100%; border: 0; background: transparent; padding: 9px 6px;
+    border-radius: 4px;
+  }
+  dd input:hover { background: var(--well); }
+  dd input:focus { background: var(--well); outline: none; box-shadow: inset 0 -2px 0 var(--accent); }
+
+  .row { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  label.check { display: flex; align-items: center; gap: 8px; color: var(--soft); cursor: pointer; }
+  label.check input { accent-color: var(--ink); width: 16px; height: 16px; }
+
+  .status { margin-top: 16px; min-height: 1.5em; color: var(--soft); }
+  .status.error { color: inherit; font-weight: 600; }
+  .status button { background: none; border: 0; padding: 0; text-decoration: underline; cursor: pointer; }
+
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--line);
+          border-top-color: var(--ink); border-radius: 50%; animation: s .7s linear infinite;
+          vertical-align: -2px; margin-right: 8px; }
+  @keyframes s { to { transform: rotate(360deg); } }
+
+  .yt textarea {
+    flex: 1; min-width: 0; border: 0; background: transparent; padding: 11px 14px; font-size: 14px;
+    resize: none; font: inherit; font-size: 14px; color: inherit; line-height: 1.4; overflow: auto;
+  }
+  .yt textarea::placeholder { color: var(--soft); }
+  .yt textarea:focus { outline: none; background: var(--well); }
+
+  .queue {
+    list-style: none; margin: 0 0 18px; padding: 0; max-height: 300px; overflow-y: auto;
+    border: 1px solid var(--line); border-radius: 10px;
+  }
+  .queue li { position: relative; display: flex; align-items: stretch; }
+  .queue li + li { border-top: 1px solid var(--line); }
+  .queue li.on { background: var(--well); box-shadow: inset 3px 0 0 var(--ink); }
+  .queue .pick {
+    flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left;
+    border: 0; background: transparent; padding: 8px 4px 8px 12px; cursor: pointer;
+  }
+  .queue .pick:hover { background: var(--well); }
+  .queue img, .queue .noart { width: 36px; height: 36px; border-radius: 3px; flex: none; object-fit: cover; background: var(--well); }
+  .queue .txt { min-width: 0; display: flex; flex-direction: column; }
+  .queue .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .queue .by { font-weight: 400; color: var(--soft); }
+  .queue .a { color: var(--soft); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .queue .st-error .a { color: inherit; font-weight: 600; }
+  .queue .st-tagged .a::before { content: "✓ "; }
+  .queue .x {
+    border: 0; background: transparent; width: 40px; flex: none; cursor: pointer;
+    font-size: 20px; line-height: 1; color: var(--soft);
+  }
+  .queue .x:hover { color: inherit; background: var(--well); }
+  .rowbar { position: absolute; left: 0; bottom: 0; height: 2px; background: var(--ink); transition: width .3s ease; }
+  .rowbar.busy { width: 30%; animation: slide 1.1s ease-in-out infinite alternate; }
+  .status .err { color: inherit; font-weight: 600; }
+
+  @media (max-width: 860px) {
+    main { grid-template-columns: 1fr; padding: 16px; gap: 24px; align-items: start; }
+    .sleeve { width: 100%; max-width: 520px; margin: 0 auto; }
+    .panel { max-width: none; }
+    dl { grid-template-columns: 96px 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="sleeve" id="sleeve">
+    <img id="cover" alt="" referrerpolicy="no-referrer">
+    <div class="hint">Drop MP3s anywhere in this window</div>
+  </div>
+
+  <section class="panel">
+    <h1 id="title" class="empty">Tag a song</h1>
+    <p class="byline" id="byline"></p>
+
+    <div class="source">
+      <div class="file">
+        <div class="what">
+          <div class="name">Add songs</div>
+          <div class="sub">Choose MP3s, drop them here, or paste YouTube links</div>
+        </div>
+        <button class="btn" id="pick">Choose files</button>
+        <input type="file" id="picker" accept=".mp3,audio/mpeg" multiple hidden>
+      </div>
+      <form class="yt" id="ytForm">
+        <textarea id="yt" rows="1" placeholder="Paste YouTube links or a playlist link" autocomplete="off" spellcheck="false" aria-label="YouTube links"></textarea>
+      </form>
+    </div>
+
+    <ul class="queue" id="queue" hidden aria-label="Songs"></ul>
+
+    <div id="editor" hidden>
+      <form class="link" id="linkForm">
+        <input id="url" type="search" placeholder="Search Genius, or paste a song link" autocomplete="off" spellcheck="false" aria-label="Search Genius or paste a song link">
+        <button class="btn" type="submit" id="lookupBtn">Search</button>
+      </form>
+      <ul class="results" id="results" hidden></ul>
+      <div class="after-link"></div>
+
+      <dl id="fields" hidden></dl>
+
+      <div class="row">
+        <button class="btn primary" id="write" disabled>Write tags</button>
+        <button class="btn" id="tagAll" hidden></button>
+        <label class="check"><input type="checkbox" id="lyrics"> Include lyrics</label>
+      </div>
+    </div>
+    <div class="status" id="status" role="status"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const FIELDS = [
+  ["title", "Title"], ["artist", "Artist"], ["album", "Album"], ["album_artist", "Album artist"],
+  ["date", "Date"], ["track", "Track"], ["disc", "Disc"], ["genre", "Genre"], ["writers", "Writers"],
+];
+const OFFLINE = "Genius Tagger isn't responding. Wait a few seconds, then reload this page.";
+
+async function api(path, body = {}) {
+  let r;
+  try {
+    r = await fetch("/api/" + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tagger": "1" },
+      body: JSON.stringify(body),
+    });
+  } catch { throw new Error(OFFLINE); }
+  const data = await r.json();
+  if (data.error === "Unknown action") throw new Error("Genius Tagger was just updated. Reload this page.");
+  if (!r.ok) throw new Error(data.error || "Something went wrong");
+  return data;
+}
+
+function status(html, isError = false) {
+  $("status").innerHTML = html;
+  $("status").classList.toggle("error", isError);
+}
+
+// Runs at most n tasks at once, so a big batch doesn't swamp YouTube or Genius.
+function limiter(n) {
+  let running = 0;
+  const waiting = [];
+  const next = () => {
+    if (running >= n || !waiting.length) return;
+    running++;
+    const [fn, resolve, reject] = waiting.shift();
+    fn().then(resolve, reject).finally(() => { running--; next(); });
+  };
+  return fn => new Promise((resolve, reject) => { waiting.push([fn, resolve, reject]); next(); });
+}
+const downloads = limiter(2), uploads = limiter(2), matches = limiter(2);
+
+/* ---------- The queue ----------
+   Each song is an item: { id, kind: "file"|"youtube", name, url, file, info, draft, state, pct, error }
+   state: uploading, waiting, downloading, converting, matching, nomatch, ready, writing, tagged, error */
+const items = [];
+let active = null, nextId = 1;
+
+function sourceName(it) {
+  return it.file?.name || it.name || it.url;
+}
+function stateText(it) {
+  switch (it.state) {
+    case "uploading": return "Copying";
+    case "waiting": return "Waiting to download";
+    case "downloading": return `Downloading ${Math.floor(it.pct || 0)}%`;
+    case "converting": return "Converting to MP3";
+    case "matching": return "Finding it on Genius";
+    case "nomatch": return "No match yet. Search for it below";
+    case "ready": return "Ready to tag";
+    case "writing": return "Writing tags";
+    case "tagged": return "Tagged";
+    case "error": return it.error;
+  }
+  return "";
+}
+const isBusy = it => ["uploading", "waiting", "downloading", "converting", "writing"].includes(it.state);
+const canTag = it => it.file && it.info && !isBusy(it) && it.state !== "tagged";
+
+function renderQueue() {
+  const q = $("queue");
+  q.hidden = !items.length;
+  q.innerHTML = items.map(it => {
+    const title = it.info ? it.info.title : sourceName(it);
+    const pct = it.state === "downloading" ? it.pct || 0 : null;
+    const sub = it.info && it.state !== "error" ? `${stateText(it)}, from ${sourceName(it)}` : stateText(it);
+    return `<li class="${it === active ? "on" : ""} st-${it.state}">
+      <button type="button" class="pick" data-id="${it.id}" aria-current="${it === active}">
+        ${it.info?.cover_url ? `<img src="${esc(it.info.cover_thumb || it.info.cover_url)}" alt="" referrerpolicy="no-referrer">` : '<span class="noart"></span>'}
+        <span class="txt"><span class="t">${esc(title)}${it.info ? ` <span class="by">${esc(it.info.artist)}</span>` : ""}</span>
+        <span class="a">${esc(sub)}</span></span>
+      </button>
+      <button type="button" class="x" data-x="${it.id}" aria-label="Remove ${esc(title)}" title="Remove from list">×</button>
+      ${pct !== null ? `<span class="rowbar" style="width:${pct}%"></span>` : ""}
+      ${["converting", "matching", "uploading"].includes(it.state) ? '<span class="rowbar busy"></span>' : ""}
+    </li>`;
+  }).join("");
+
+  const ready = items.filter(canTag).length;
+  $("tagAll").hidden = items.length < 2;
+  $("tagAll").textContent = ready ? `Tag all ready (${ready})` : "Tag all ready";
+  $("tagAll").disabled = !ready || tagging;
+  $("write").disabled = !(active && canTag(active)) || tagging;
+}
+
+$("queue").addEventListener("click", e => {
+  const x = e.target.closest("[data-x]");
+  if (x) return remove(+x.dataset.x);
+  const b = e.target.closest("[data-id]");
+  if (b) select(items.find(it => it.id === +b.dataset.id));
+});
+
+function update(it) {
+  renderQueue();
+  if (it === active) renderActive(false);
+}
+
+function add(it) {
+  it.id = nextId++;
+  it.draft = {};
+  items.push(it);
+  if (!active) select(it); else renderQueue();
+  return it;
+}
+
+function remove(id) {
+  const i = items.findIndex(it => it.id === id);
+  if (i < 0) return;
+  const [gone] = items.splice(i, 1);
+  if (gone === active) select(items[i] || items[i - 1] || null);
+  else renderQueue();
+}
+
+function select(it) {
+  active = it;
+  hideResults();
+  $("url").value = it ? (it.query || "") : "";
+  renderActive(true);
+  renderQueue();
+}
+
+/* ---------- The editor (shows the selected song) ---------- */
+function theme(colors) {
+  const root = document.documentElement;
+  const [bg, accent, ink] = colors || [];
+  if (bg && ink) {
+    root.setAttribute("data-themed", "");
+    root.style.setProperty("--bg", bg);
+    root.style.setProperty("--ink", ink);
+    root.style.setProperty("--accent", accent || ink);
+  } else {
+    root.removeAttribute("data-themed");
+    ["--bg", "--ink", "--accent"].forEach(v => root.style.removeProperty(v));
+  }
+}
+
+let shownInfo;
+function renderActive(full) {
+  const it = active, info = it?.info;
+  $("editor").hidden = !it;
+  if (!it) {
+    $("title").textContent = "Tag a song"; $("title").classList.add("empty");
+    $("byline").textContent = "";
+    $("cover").classList.remove("on"); $("sleeve").classList.remove("has-cover");
+    theme(null); shownInfo = undefined; status("");
+    return;
+  }
+  // Only rebuild the form when the song or its match changed, so typing isn't interrupted.
+  if (!full && info === shownInfo) { status(activeHint()); return; }
+  shownInfo = info;
+
+  $("title").textContent = info ? (it.draft.title ?? info.title) : sourceName(it).replace(/\.mp3$/i, "");
+  $("title").classList.toggle("empty", !info);
+  $("byline").textContent = info ? (it.draft.artist ?? info.artist) : "";
+  const img = $("cover");
+  if (info?.cover_url) {
+    if (img.getAttribute("src") !== info.cover_url) {
+      img.classList.remove("on");
+      img.onload = () => { if (active?.info?.cover_url === info.cover_url) { img.classList.add("on"); $("sleeve").classList.add("has-cover"); } };
+      img.src = info.cover_url;
+    } else { img.classList.add("on"); $("sleeve").classList.add("has-cover"); }
+  } else {
+    img.classList.remove("on"); $("sleeve").classList.remove("has-cover");
+  }
+  theme(info?.colors);
+
+  if (info) {
+    const base = k => k === "writers" ? (info.writers || []).join(", ")
+      : k === "track" && info.track && info.track_total ? `${info.track}/${info.track_total}` : (info[k] ?? "");
+    $("fields").innerHTML = FIELDS.map(([k, label]) =>
+      `<dt><label for="f_${k}">${label}</label></dt><dd><input id="f_${k}" data-k="${k}" value="${esc(it.draft[k] ?? base(k))}" spellcheck="false"></dd>`
+    ).join("");
+  }
+  $("fields").hidden = !info;
+  status(activeHint());
+}
+
+function activeHint() {
+  const it = active;
+  if (!it) return "";
+  if (it.state === "tagged") return `Tagged and saved as ${esc(it.file.name)} in Music › Genius Tagger. <button onclick="api('reveal',{path:active.file.path})">Show in Finder</button>`;
+  if (it.state === "error") return `<span class="err">${esc(it.error)}</span>`;
+  if (!it.info) return it.state === "matching" ? "Finding it on Genius" : "Pick the matching song from Genius.";
+  if (!it.file) return "The tags can be written once the download finishes.";
+  return "Check the details, then write the tags.";
+}
+
+$("fields").addEventListener("input", e => {
+  const k = e.target.dataset.k;
+  if (!active || !k) return;
+  active.draft[k] = e.target.value;
+  if (k === "title") $("title").textContent = e.target.value || "Untitled";
+  if (k === "artist") $("byline").textContent = e.target.value;
+});
+
+function collect(it) {
+  const out = { ...it.info };
+  for (const [k, raw] of Object.entries(it.draft)) {
+    const v = raw.trim();
+    if (k === "writers") out.writers = v ? v.split(",").map(s => s.trim()).filter(Boolean) : [];
+    else if (k === "track") {
+      const [n, total] = v.split("/").map(s => s.trim());
+      out.track = n || null; out.track_total = total || null;
+    } else out[k] = v || null;
+  }
+  if (!out.title || !out.artist) throw new Error("Title and artist can't be empty.");
+  return out;
+}
+
+/* ---------- Adding songs ---------- */
+// The app works on its own copy in Music › Genius Tagger; the original file is left alone.
+function addFiles(list) {
+  const files = [...list];
+  const mp3s = files.filter(f => /\.mp3$/i.test(f.name));
+  if (files.length && !mp3s.length) return status("Those aren't MP3s. Choose .mp3 files.", true);
+  mp3s.forEach(f => {
+    const it = add({ kind: "file", name: f.name, state: "uploading" });
+    uploads(async () => {
+      const r = await fetch("/api/upload", {
+        method: "POST", body: f,
+        headers: { "X-Tagger": "1", "X-Filename": encodeURIComponent(f.name) },
+      }).catch(() => { throw new Error(OFFLINE); });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Couldn't copy that file");
+      it.file = data;
+    }).then(() => autoMatch(it), e => fail(it, e));
+  });
+  if (mp3s.length < files.length) status(`Skipped ${files.length - mp3s.length} file(s) that aren't MP3s.`);
+}
+$("pick").onclick = () => $("picker").click();
+$("picker").onchange = () => { addFiles($("picker").files); $("picker").value = ""; };
+
+function fail(it, e) {
+  it.state = "error";
+  it.error = e.message;
+  update(it);
+}
+
+const YT = /https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/[^\s<>"']+/gi;
+async function addLinks() {
+  const text = $("yt").value;
+  const links = [...new Set(text.match(YT) || [])];
+  if (!links.length) {
+    if (text.trim()) status("Those aren't YouTube links. They should start with https://www.youtube.com/ or https://youtu.be/", true);
+    return;
+  }
+  $("yt").value = ""; growYt();
+  for (const url of links) {
+    if (/youtube\.com\/playlist\?/i.test(url)) {
+      status('<span class="spin"></span>Reading the playlist');
+      try {
+        const { videos } = await api("playlist", { url });
+        videos.forEach(v => queueDownload(v.url, v.title));
+        status(`Added ${videos.length} songs from the playlist.`);
+      } catch (e) { status("Couldn't read that playlist: " + esc(e.message), true); }
+    } else queueDownload(url);
+  }
+}
+function queueDownload(url, title) {
+  const it = add({ kind: "youtube", url, name: title, state: "waiting" });
+  downloads(async () => {
+    it.state = "downloading"; update(it);
+    const { job } = await api("youtube", { url });
+    while (true) {
+      await sleep(700);
+      const j = await api("job", { job });
+      if (j.title) it.name = j.title;
+      if (j.stage === "error") throw new Error("Couldn't download: " + j.error);
+      if (j.stage === "done") { it.file = j.file; it.name = j.title || it.name; return; }
+      it.state = j.stage === "converting" ? "converting" : "downloading";
+      it.pct = j.pct;
+      update(it);
+    }
+  }).then(() => autoMatch(it), e => fail(it, e));
+}
+function growYt() { const t = $("yt"); t.style.height = "auto"; t.style.height = Math.min(t.scrollHeight, 160) + "px"; }
+$("yt").addEventListener("input", growYt);
+$("yt").addEventListener("paste", () => setTimeout(addLinks, 0));
+$("yt").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addLinks(); } });
+$("ytForm").onsubmit = e => { e.preventDefault(); addLinks(); };
+
+/* ---------- Matching to Genius ---------- */
+// Turn a filename or video title into a search: drop the junk YouTube adds.
+function guessQuery(it) {
+  const t = it.file?.tags || {};
+  if (t.title) return [t.artist, t.title].filter(Boolean).join(" ");
+  return (it.kind === "youtube" ? it.name || "" : sourceName(it))
+    .replace(/\.mp3$/i, "").replace(/\[[^\]]*\]/g, " ")
+    .replace(/\([^)]*\b(official|oficial|video|lyrics?|audio|visuali[sz]er|hd|hq|4k|explicit|clean|unreleased|leak(ed)?|prod\.?|produced|remaster(ed)?)\b[^)]*\)/gi, " ")
+    .replace(/\b(official (music )?video|official audio|lyric video|video oficial|lyrics)\b/gi, " ")
+    .replace(/[|_]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// Prefer results whose artist and title words appear in the query; avoid remixes and covers nobody asked for.
+function pickBest(results, q) {
+  const ql = q.toLowerCase();
+  let best = null, bestScore = -Infinity;
+  results.slice(0, 6).forEach((r, i) => {
+    let score = -0.4 * i;
+    const artist = (r.artist || "").toLowerCase().split(/,|&| and /)[0].trim();
+    if (artist.length > 1 && ql.includes(artist)) score += 3;
+    const words = (r.title || "").toLowerCase().replace(/\(.*?\)/g, " ").split(/[^\p{L}\p{N}]+/u).filter(w => w.length > 1);
+    if (words.length) score += 2 * words.filter(w => ql.includes(w)).length / words.length;
+    if (/remix|rmx|cover|parody|sped up|slowed/i.test(r.title) && !/remix|rmx|cover|parody|sped|slowed/i.test(q)) score -= 2;
+    if (score > bestScore) { bestScore = score; best = r; }
+  });
+  return best;
+}
+
+async function autoMatch(it) {
+  if (it.info) { it.state = "ready"; return update(it); }
+  const q = guessQuery(it);
+  it.query = q;
+  if (it === active && !$("url").value) $("url").value = q;
+  if (q.length < 3) { it.state = "nomatch"; return update(it); }
+  it.state = "matching"; update(it);
+  try {
+    await matches(async () => {
+      const { results } = await api("search", { q });
+      const best = pickBest(results, q);
+      if (it.info) return;                 // picked by hand meanwhile
+      if (!best) { it.state = "nomatch"; return; }
+      it.info = await api("lookup", { url: best.url });
+      it.draft = {};
+      it.state = "ready";
+    });
+  } catch (e) { it.state = "nomatch"; }
+  update(it);
+}
+
+/* ---------- Searching by hand for the selected song ---------- */
+const isLink = v => /^https?:\/\//i.test(v);
+let searchSeq = 0, searchTimer = null;
+function hideResults() { $("results").hidden = true; $("results").innerHTML = ""; }
+
+async function search(q) {
+  const seq = ++searchSeq;
+  $("results").hidden = false;
+  $("results").innerHTML = '<li class="empty"><span class="spin"></span>Searching Genius</li>';
+  try {
+    const { results } = await api("search", { q });
+    if (seq !== searchSeq) return;
+    $("results").innerHTML = results.length ? results.map((r, i) => `
+      <li><button type="button" data-i="${i}">
+        ${r.thumb ? `<img src="${esc(r.thumb)}" alt="" referrerpolicy="no-referrer">` : '<span class="noart"></span>'}
+        <span class="txt"><div class="t">${esc(r.title)}</div><div class="a">${esc(r.artist)}${r.year ? ", " + r.year : ""}</div></span>
+      </button></li>`).join("")
+      : `<li class="empty">No songs found for “${esc(q)}”. Try fewer words, or the artist’s name.</li>`;
+    $("results").querySelectorAll("button").forEach(b => b.onclick = () => lookup(results[b.dataset.i].url));
+  } catch (e) {
+    if (seq === searchSeq) $("results").innerHTML = `<li class="empty">${esc(e.message)}</li>`;
+  }
+}
+
+async function lookup(url) {
+  const it = active;
+  if (!it) return;
+  hideResults();
+  $("lookupBtn").disabled = true;
+  status('<span class="spin"></span>Looking up the song on Genius');
+  try {
+    const info = await api("lookup", { url });
+    it.info = info; it.draft = {};
+    if (!isBusy(it) && it.state !== "tagged") it.state = "ready";
+    if (it.state === "tagged") it.state = "ready";   // re-tagging with a different match
+    update(it);
+    if (it === active) renderActive(true);
+  } catch (e) { status(esc(e.message), true); }
+  finally { $("lookupBtn").disabled = false; }
+}
+
+$("url").addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  const v = $("url").value.trim();
+  if (active) active.query = v;
+  if (!v || isLink(v)) { searchSeq++; return hideResults(); }
+  if (v.length >= 3) searchTimer = setTimeout(() => search(v), 350);
+});
+$("url").addEventListener("keydown", e => {
+  if (e.key === "Escape") hideResults();
+  if (e.key === "ArrowDown") { const b = $("results").querySelector("button"); if (b) { e.preventDefault(); b.focus(); } }
+});
+$("results").addEventListener("keydown", e => {
+  const btns = [...$("results").querySelectorAll("button")], i = btns.indexOf(document.activeElement);
+  if (e.key === "ArrowDown" && i < btns.length - 1) { e.preventDefault(); btns[i + 1].focus(); }
+  if (e.key === "ArrowUp") { e.preventDefault(); (i > 0 ? btns[i - 1] : $("url")).focus(); }
+  if (e.key === "Escape") { hideResults(); $("url").focus(); }
+});
+function submitSearch() {
+  const v = $("url").value.trim();
+  if (!v) return $("url").focus();
+  if (!isLink(v)) { clearTimeout(searchTimer); return search(v); }
+  if (!/genius\.com\//i.test(v)) return status("That isn't a Genius link. It should start with https://genius.com/", true);
+  lookup(v);
+}
+$("linkForm").onsubmit = e => { e.preventDefault(); submitSearch(); };
+$("url").addEventListener("paste", () => setTimeout(() => { if (isLink($("url").value.trim())) submitSearch(); }, 0));
+
+/* ---------- Writing tags ---------- */
+let tagging = false;
+async function tag(it) {
+  const data = collect(it);
+  it.state = "writing"; update(it);
+  try {
+    it.file = await api("tag", { path: it.file.path, info: data, lyrics: $("lyrics").checked });
+    it.state = "tagged";
+  } catch (e) { it.state = "error"; it.error = e.message; }
+  update(it);
+}
+
+$("write").onclick = async () => {
+  if (!active) return;
+  try { collect(active); } catch (e) { return status(esc(e.message), true); }
+  await tag(active);
+};
+
+$("tagAll").onclick = async () => {
+  tagging = true; renderQueue();
+  const todo = items.filter(canTag);
+  let done = 0, failed = 0;
+  for (const it of todo) {
+    try { collect(it); } catch { it.state = "error"; it.error = "Title and artist can't be empty."; failed++; update(it); continue; }
+    await tag(it);
+    it.state === "tagged" ? done++ : failed++;
+  }
+  tagging = false; renderQueue();
+  const unmatched = items.filter(it => !it.info && it.state !== "error").length;
+  status([`Tagged ${done} of ${todo.length}.`, failed && `${failed} failed. Click ${failed === 1 ? "it" : "them"} to see why.`,
+          unmatched && `${unmatched} still ${unmatched === 1 ? "needs" : "need"} a Genius match.`].filter(Boolean).join(" "), failed > 0);
+};
+
+/* ---------- Drag and drop ---------- */
+let depth = 0;
+addEventListener("dragenter", e => { e.preventDefault(); depth++; document.body.classList.add("dragging"); });
+addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; document.body.classList.remove("dragging"); } });
+addEventListener("dragover", e => e.preventDefault());
+addEventListener("drop", e => {
+  e.preventDefault(); depth = 0; document.body.classList.remove("dragging");
+  addFiles(e.dataTransfer.files);
+});
+
+// Ask before closing the tab while work is still going
+addEventListener("beforeunload", e => { if (items.some(isBusy)) { e.preventDefault(); e.returnValue = ""; } });
+
+// Only matters when app.py is run by hand: lets it quit after the tab is closed
+api("ping").catch(() => {});
+setInterval(() => api("ping").catch(() => {}), 10000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) api("ping").catch(() => {}); });
+</script>
+</body>
+</html>
